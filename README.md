@@ -27,6 +27,6 @@ The analysis focuses on key indicators such as:
 - `analysis.R` → Main R script
 - `report.pdf` → Full project report
 
-    Author
- Mkulu Salim
- Statistics & Programming Graduate  
+    Author:
+  Mkulu Salim
+  Statistics & Programming Graduate  
