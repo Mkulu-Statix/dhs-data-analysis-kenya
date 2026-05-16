@@ -1,0 +1,425 @@
+---
+title: "Child Malnutrition Analysis in Kenya (DHS)"
+author: "Mkulu Salim"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# 1. Introduction
+
+This report analyzes child malnutrition in Kenya using the Demographic and Health Survey (DHS) data.  
+The focus is on three key indicators:
+
+- Stunting (Height-for-age)
+- Wasting (Weight-for-height)
+- Underweight (Weight-for-age)
+
+The analysis also examines inequalities by:
+- Residence
+- Wealth index
+- Mother's education
+- Sex of the child
+
+---
+
+# 2. Data Preparation
+
+## 2.1 Data Import
+```{r data_import}
+library(haven)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+DHS <- read_dta("C:/Users/HP/Desktop/KEBR8CDT/KEBR8CFL.DTA")
+```
+
+
+## 2.2 Variable Selection and Weight Creation
+```{r variable_selection}
+DHS_Analysis <- DHS %>%
+  mutate(weight = v005 / 1000000) %>%
+  select(v025, v190, v106, b4, hw70, hw71, hw72, weight)
+```
+
+
+## 2.3 Handling Invalid Values
+```{r invalid_values_handling}
+DHS_Analysis <- DHS_Analysis %>%
+  mutate(
+    hw70 = ifelse(hw70 > 9000, NA, hw70),
+    hw71 = ifelse(hw71 > 9000, NA, hw71),
+    hw72 = ifelse(hw72 > 9000, NA, hw72)
+  )
+```
+
+
+## 2.4 Creating Nutrition Indicators
+```{r indicators_creation}
+DHS_Analysis <- DHS_Analysis %>%
+  mutate(
+    stunted = ifelse(is.na(hw70), NA, ifelse(hw70 < -200, 1, 0)),
+    underweight = ifelse(is.na(hw71), NA, ifelse(hw71 < -200, 1, 0)),
+    wasted = ifelse(is.na(hw72), NA, ifelse(hw72 < -200, 1, 0))
+  )
+```
+
+
+## 2.5 Recoding Explanatory Variables
+```{r explanatory_variables}
+DHS_Analysis <- DHS_Analysis %>%
+  mutate(
+    residence = ifelse(v025 == 1, "Urban", "Rural"),
+    wealth_group = factor(v190,
+      levels = 1:5,
+      labels = c("Poorest","Poorer","Middle","Richer","Richest")
+    ),
+    mothers_education_level = factor(v106,
+      levels = 0:3,
+      labels = c("No education","Primary","Secondary","Higher")
+    ),
+    sex_of_child = ifelse(b4 == 1, "Male", "Female")
+  )
+```
+
+
+# 3. Prevalence Analysis
+```{r prevalence_analysis}
+prevalence_results <- DHS_Analysis %>%
+  summarise(
+    Stunting = weighted.mean(stunted, weight, na.rm=TRUE)*100,
+    Wasting = weighted.mean(wasted, weight, na.rm=TRUE)*100,
+    Underweight = weighted.mean(underweight, weight, na.rm=TRUE)*100,
+    .groups = "drop"
+  ) %>%
+  mutate(across(everything(), ~round(.,1)))
+
+prevalence_results
+```
+
+
+## Table Format
+```{r table_format}
+prevalence_table <- prevalence_results %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "Indicator",
+    values_to = "Prevalence"
+  )
+
+prevalence_table
+```
+
+# 4. Inequality Analysis
+
+## 4.1 By Residence
+```{r residence_analysis}
+residence_analysis <- DHS_Analysis %>%
+  group_by(residence) %>%
+  summarise(
+    Stunting = weighted.mean(stunted, weight, na.rm=TRUE)*100,
+    Wasting = weighted.mean(wasted, weight, na.rm=TRUE)*100,
+    Underweight = weighted.mean(underweight, weight, na.rm=TRUE)*100,
+    .groups = "drop"
+  )
+
+residence_analysis
+```
+
+
+## 4.2 By Wealth Index
+```{r wealthindex_analysis}
+wealth_analysis <- DHS_Analysis %>%
+  group_by(wealth_group) %>%
+  summarise(
+    Stunting = weighted.mean(stunted, weight, na.rm=TRUE)*100,
+    Wasting = weighted.mean(wasted, weight, na.rm=TRUE)*100,
+    Underweight = weighted.mean(underweight, weight, na.rm=TRUE)*100,
+    .groups = "drop"
+  )
+
+wealth_analysis
+```
+
+
+## 4.3 By Mother's Education
+```{r mothers_education_analysis}
+education_analysis <- DHS_Analysis %>%
+  group_by(mothers_education_level) %>%
+  summarise(
+    Stunting = weighted.mean(stunted, weight, na.rm=TRUE)*100,
+    Wasting = weighted.mean(wasted, weight, na.rm=TRUE)*100,
+    Underweight = weighted.mean(underweight, weight, na.rm=TRUE)*100,
+    .groups = "drop"
+  )
+
+education_analysis
+```
+
+
+## 4.4 By Sex of Child
+```{r sex_of_child_analysis}
+sex_analysis <- DHS_Analysis %>%
+  group_by(sex_of_child) %>%
+  summarise(
+    Stunting = weighted.mean(stunted, weight, na.rm=TRUE)*100,
+    Wasting = weighted.mean(wasted, weight, na.rm=TRUE)*100,
+    Underweight = weighted.mean(underweight, weight, na.rm=TRUE)*100,
+    .groups = "drop"
+  )
+
+sex_analysis
+```
+
+
+# 5. Combined Analysis
+
+## 5.1 Wealth × Residence
+```{r wealth_x_residence}
+combined_wr <- DHS_Analysis %>%
+  group_by(residence, wealth_group) %>%
+  summarise(
+    Stunting = weighted.mean(stunted, weight, na.rm=TRUE)*100,
+    Wasting = weighted.mean(wasted, weight, na.rm=TRUE)*100,
+    Underweight = weighted.mean(underweight, weight, na.rm=TRUE)*100,
+    .groups = "drop"
+  ) %>%
+  mutate(across(c(Stunting, Wasting, Underweight), ~round(.,1)))
+
+combined_wr
+```
+
+
+#  6. Visualization
+
+## 6.1 Overall Prevalence
+```{r overall_prevalence}
+ggplot(prevalence_table,
+       aes(x = Indicator, y = Prevalence, fill = Indicator)) +
+  geom_col() +
+  labs(title = "Prevalence of Child Malnutrition",
+       y = "Prevalence (%)", x = "") +
+  theme_minimal()
+```
+
+
+## 6.2 Stunting by Wealth
+```{r stunting_by_wealth}
+ggplot(wealth_analysis,
+       aes(x = wealth_group, y = Stunting, fill = wealth_group)) +
+  geom_col() +
+  labs(title = "Stunting by Wealth Index",
+       y = "Prevalence (%)") +
+  theme_minimal()
+```
+
+
+## 6.3 Stunting by Residence
+```{r stunting_by_residence}
+ggplot(residence_analysis,
+       aes(x = residence, y = Stunting, fill = residence)) +
+  geom_col() +
+  labs(
+    title = "Stunting by Residence",
+    y = "Prevalence (%)",
+    x = ""
+  ) +
+  theme_minimal()
+```
+
+
+## 6.4 Combined Inequality
+```{r combined_inequality}
+ggplot(combined_wr,
+       aes(x = wealth_group, y = Stunting, fill = residence)) +
+  geom_col(position = "dodge") +
+  labs(title = "Stunting by Wealth and Residence",
+       y = "Prevalence (%)") +
+  theme_minimal()
+```
+
+
+## Wasting
+```{r wasting}
+ggplot(wealth_analysis,
+       aes(x = wealth_group, y = Wasting, fill = wealth_group))+
+  geom_col()+
+  labs(title="Wasting by Wealth", y="Prevalence (%)")+
+  theme_minimal()
+```
+
+
+## Underweight
+```{r underweight}
+ggplot(wealth_analysis,
+       aes(x = wealth_group, y = Underweight, fill = wealth_group))+
+  geom_col()+
+  labs(title="Underweight by Wealth", y="Prevalence (%)")+
+  theme_minimal()
+```
+
+
+#     Exporting Project Outputs
+  
+# prevalence_table.csv
+# stunting_plot.png
+# wasting_plot.png
+# underweight_plot.png
+
+#  1. Create prevalence table
+```{r}
+prevalence_results <- c(
+  Stunting = weighted.mean(DHS_Analysis$stunted,
+                           DHS_Analysis$weight,
+                           na.rm = TRUE) * 100,
+  Wasting = weighted.mean(DHS_Analysis$wasted,
+                          DHS_Analysis$weight,
+                          na.rm = TRUE) * 100,
+  Underweight = weighted.mean(DHS_Analysis$underweight,
+                              DHS_Analysis$weight,
+                              na.rm = TRUE) * 100
+)
+
+prevalence_table <- data.frame(
+  Indicator = names(prevalence_results),
+  Prevalence = round(as.numeric(prevalence_results), 1)
+)
+
+print(prevalence_table)
+```
+
+# Save summary table
+```{r}
+write.csv(prevalence_table,
+          "outputs/prevalence_table.csv",
+          row.names = FALSE)
+```
+
+# 2.Create individual plots
+
+```{r}
+library(ggplot2)
+```
+
+# (a) Stunting plot
+```{r}
+stunting_plot <- ggplot(
+  subset(prevalence_table, Indicator == "Stunting"),
+  aes(x = Indicator, y = Prevalence)
+) +
+  geom_col(fill = "steelblue", width=0.3) +
+  labs(
+    title = "Prevalence of Stunting in Kenya",
+    y = "Percentage (%)",
+    x = ""
+  ) +
+  theme_minimal()
+```
+
+# (b) Wasting plot
+```{r}
+wasting_plot <- ggplot(
+  subset(prevalence_table, Indicator == "Wasting"),
+  aes(x = Indicator, y = Prevalence)
+) +
+  geom_col(fill = "tomato", width=0.3) +
+  labs(
+    title = "Prevalence of Wasting in Kenya",
+    y = "Percentage (%)",
+    x = ""
+  ) +
+  theme_minimal()
+```
+
+# (c) Underweight plot
+```{r}
+underweight_plot <- ggplot(
+  subset(prevalence_table, Indicator == "Underweight"),
+  aes(x = Indicator, y = Prevalence)
+) +
+  geom_col(fill = "darkgreen", width=0.3) +
+  labs(
+    title = "Prevalence of Underweight in Kenya",
+    y = "Percentage (%)",
+    x = ""
+  ) +
+  theme_minimal()
+```
+
+# One Combined Plot
+```{r}
+overall_prevalence_plot <- ggplot(
+  prevalence_table,
+  aes(x = Indicator, y = Prevalence, fill = Indicator)
+) +
+  geom_col() +
+  labs(
+    title = "Prevalence of Child Malnutrition",
+    y = "Prevalence (%)",
+    x = ""
+  ) +
+  theme_minimal()
+```
+
+
+# Display plots
+```{r}
+print(stunting_plot)
+print(wasting_plot)
+print(underweight_plot)
+print(overall_prevalence_plot)
+```
+
+# Save plots
+
+# Stunting
+```{r}
+ggsave("outputs/stunting_plot.png",
+       plot = stunting_plot,
+       width = 8,
+       height = 5,
+       dpi = 300)
+```
+
+# Wasting
+```{r}
+ggsave("outputs/wasting_plot.png",
+       plot = wasting_plot,
+       width = 8,
+       height = 5,
+       dpi = 300)
+```
+
+# Underweight
+```{r}
+ggsave("outputs/underweight_plot.png",
+       plot = underweight_plot,
+       width = 8,
+       height = 5,
+       dpi = 300)
+```
+
+# Overall_prevalence
+```{r}
+ggsave("outputs/overall_prevalence_plot.png",
+       plot = overall_prevalence_plot,
+       width = 8,
+       height = 5,
+       dpi = 300)
+```
+
+
+#  Conclusion
+
+This analysis estimated the prevalence of stunting, wasting, and underweight
+among children in Kenya using DHS data. Results revealed substantial
+inequalities by wealth status, place of residence, maternal education,
+and sex of the child.
+
+Children from poorer households and rural areas experienced higher levels
+of malnutrition, highlighting the importance of targeted nutrition and
+public health interventions.
